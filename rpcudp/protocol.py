@@ -57,7 +57,8 @@ class RPCProtocol(protocol.DatagramProtocol):
         if not isinstance(data, list) or len(data) != 2:
             raise MalformedMessage("Could not read packet: %s" % data)
         if msgID in self._outstanding:
-            log.err("received duplicated message %s from %s; ignoring" % msgargs)
+            log.err("received duplicated message %s from %s; resending old response" % msgargs)
+            self.transport.write(txdata, address)
             return
         funcname, args = data
         f = getattr(self, "rpc_%s" % funcname, None)
@@ -76,10 +77,9 @@ class RPCProtocol(protocol.DatagramProtocol):
     def _sendResponse(self, response, msgID, address):
         if self.noisy:
             log.msg("sending response for msg id %s to %s" % (b64encode(msgID), address))
-        d = defer.Deferred()
         timeout = reactor.callLater(self._waitTimeout, self._removeStaleId, msgID)
-        self._outstanding[msgID] = (d, timeout)
         txdata = '\x01%s%s' % (msgID, umsgpack.packb(response))
+        self._outstanding[msgID] = (txdata, timeout)
         self.transport.write(txdata, address)
 
     def _timeout(self, msgID):
